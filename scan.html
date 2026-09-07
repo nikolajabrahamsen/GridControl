@@ -220,6 +220,8 @@ const STR={
     scanLicensePrompt:"Scan kørerens licens-stregkode for at starte",
     licenseNumber:"Licensnummer",scanOrEnterLicense:"Scan eller indtast licens...",switchDriver:"Skift kører",
     registered:"registreret",thisSession:"denne session",scanPrefix:"Scan",scanOrEnterBarcode:"Scan eller indtast stregkode...",
+    controlScanTitle:"🔍 Kontrolscan",controlScanHint:"Scan en stregkode her uden at vælge en del først — finder selv ud af hvilken del det er, hvis koden allerede er kendt for denne kører.",
+    noMatchTitle:"Koden matcher ikke noget kendt",noMatchHint:"Vælg hvilken del denne kode hører til:",
     knownCodes:"Kendte koder:",noneYet:"Ingen registreret endnu",newFor:"Nyt",newCode:"Ny kode:",
     alreadyRegistered:"Allerede registreret",
     tireConfirm:(n,max)=>`Dette bliver nr. ${n} af (normalt) ${max}. Bekræft at det skal tilføjes.`,
@@ -256,6 +258,8 @@ const STR={
     scanLicensePrompt:"Scan the driver's license barcode to start",
     licenseNumber:"License number",scanOrEnterLicense:"Scan or enter license...",switchDriver:"Switch driver",
     registered:"registered",thisSession:"this session",scanPrefix:"Scan",scanOrEnterBarcode:"Scan or enter barcode...",
+    controlScanTitle:"🔍 Control scan",controlScanHint:"Scan a barcode here without picking a part first — it figures out which part it is automatically if the code is already known for this driver.",
+    noMatchTitle:"That code doesn't match anything known",noMatchHint:"Choose which part this code belongs to:",
     knownCodes:"Known codes:",noneYet:"None registered yet",newFor:"New",newCode:"New code:",
     alreadyRegistered:"Already registered",
     tireConfirm:(n,max)=>`This will be no. ${n} of (normally) ${max}. Confirm it should be added.`,
@@ -452,6 +456,7 @@ function ScanMode({ev,users,sessions,scans,addScan,scanLimits,me}){
   const [activePart,setActivePart]=useState(null); // frame|motor|slick|wet while awaiting a scan
   const [confirmPopup,setConfirmPopup]=useState(null); // {part,barcode,count}
   const [alarm,setAlarm]=useState(null); // {part,barcode}
+  const [unmatchedBarcode,setUnmatchedBarcode]=useState(null); // quick-scan found no match on any part — asks which one
   const [cameraFor,setCameraFor]=useState(null); // "license" | "part" | null – which field the camera modal feeds into
   const inputRef=useRef(null);
   const by=(JSON.parse(localStorage.getItem("gc_scan_by")||'""'))||"";
@@ -543,6 +548,20 @@ function ScanMode({ev,users,sessions,scans,addScan,scanLimits,me}){
     setConfirmPopup({part,barcode,count:known.length});
   };
 
+  // Quick/control scan: instead of manually tapping which part first, just scan the barcode — this
+  // looks it up against everything already known for this driver (across all four parts) and, if
+  // it matches, treats it exactly like scanning that part directly (same session-tracking, same
+  // limits). Only if it doesn't match anything at all does it ask which part it should be filed
+  // under, since at that point there's genuinely no way to know automatically.
+  const handleAutoScan=(val)=>{
+    const barcode=val.trim();
+    if(!barcode)return;
+    setCode("");
+    const matchedPart=["frame","motor","slick","wet"].find(p=>partBarcodes(driver.id,p).includes(barcode));
+    if(matchedPart)handlePartScan(matchedPart,barcode);
+    else setUnmatchedBarcode(barcode);
+  };
+
   const confirmNewPart=async(accept)=>{
     if(accept){
       await addScan({event_id:ev.id,driver_id:driver.id,driver_name:driver.name,kart_no:driver.kartNumber?String(driver.kartNumber):null,class:driver._regClass,session:sessionCtx==="checkin"?null:sessionCtx,part_type:confirmPopup.part,barcode:confirmPopup.barcode,status:confirmPopup.count?"new_registered":"ok",scanned_by:byName});
@@ -598,6 +617,12 @@ function ScanMode({ev,users,sessions,scans,addScan,scanLimits,me}){
           <Btn small variant="ghost" onClick={()=>{setDriver(null);setActivePart(null);}}>{STR.switchDriver}</Btn>
         </div>
       </Card>
+
+      {!activePart&&<Card style={{borderLeft:`3px solid ${C.blue}`}}>
+        <div style={{color:C.text,fontWeight:700,marginBottom:4}}>{STR.controlScanTitle}</div>
+        <div style={{color:C.textDim,fontSize:11,marginBottom:8}}>{STR.controlScanHint}</div>
+        <Input inputRef={inputRef} value={code} onChange={setCode} onKeyDown={onKeyDown(handleAutoScan)} placeholder={STR.scanOrEnterBarcode} autoFocus onCamera={()=>setCameraFor("part")}/>
+      </Card>}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
         {["frame","motor","slick","wet"].map(part=>{
@@ -695,6 +720,19 @@ function ScanMode({ev,users,sessions,scans,addScan,scanLimits,me}){
         <div style={{color:"#fff",fontSize:13,marginBottom:24,opacity:0.9}}>{STR.codeNotApproved(alarm.barcode)}</div>
         <button onClick={acknowledgeAlarm} style={{background:"#fff",color:C.red,border:"none",borderRadius:8,padding:"14px 28px",fontSize:16,fontWeight:900,cursor:"pointer",fontFamily:"inherit"}}>{STR.confirmReject}</button>
       </div>
+    </div>}
+
+    {unmatchedBarcode&&<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}}>
+      <Card style={{maxWidth:400,borderLeft:`3px solid ${C.blue}`}}>
+        <div style={{fontWeight:700,fontSize:16,marginBottom:8,color:C.blue}}>{STR.noMatchTitle}</div>
+        <div style={{color:C.text,fontSize:13,marginBottom:14}}>{STR.noMatchHint} <b>{unmatchedBarcode}</b></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+          {["frame","motor","slick","wet"].map(part=>
+            <Btn key={part} variant="secondary" onClick={()=>{const code=unmatchedBarcode;setUnmatchedBarcode(null);setActivePart(part);handlePartScan(part,code);}}>{PART_ICONS[part]} {PARTS[part]}</Btn>
+          )}
+        </div>
+        <Btn variant="ghost" onClick={()=>setUnmatchedBarcode(null)} style={{width:"100%"}}>{STR.cancel}</Btn>
+      </Card>
     </div>}
   </div>;
 }
