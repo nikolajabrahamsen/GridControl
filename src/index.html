@@ -4647,12 +4647,12 @@ function AdminUsers({state,dispatch}){
   const t=useT();
   const lang=useLang();
   const [search,setSearch]=useState("");
-  const [onlyRegistered,setOnlyRegistered]=useState(false);
-  const [onlyManual,setOnlyManual]=useState(false);
+  const [hideCsv,setHideCsv]=useState(false);
+  const [hideManual,setHideManual]=useState(false);
   const [editId,setEditId]=useState(null);
   const [editForm,setEditForm]=useState({});
   const [saved,setSaved]=useState(false);
-  const filtered=state.users.filter(u=>u.name.toLowerCase().includes(search.toLowerCase())||u.email?.toLowerCase().includes(search.toLowerCase())).filter(u=>!onlyRegistered||u.source!=="csv-import").filter(u=>!onlyManual||u.source==="manual").slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"","da"));
+  const filtered=state.users.filter(u=>u.name.toLowerCase().includes(search.toLowerCase())||u.email?.toLowerCase().includes(search.toLowerCase())).filter(u=>!hideCsv||u.source!=="csv-import").filter(u=>!hideManual||u.source!=="manual").slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"","da"));
 
   const openEdit=u=>{setEditId(u.id);setEditForm({name:u.name,phone:u.phone||"",type:u.type,isOfficial:u.isOfficial||false,isAdmin:u.isAdmin||false,isSubAdmin:u.isSubAdmin||false,adminSeriesIds:u.adminSeriesIds||[],license:u.license||"",licenseValid:u.licenseValid??null,kartNumber:u.kartNumber||"",club:u.club||"",dob:u.dob||"",transponder:u.transponder||"",class:u.class||"",country:u.country||"DK",dispensations:u.dispensations||[]});setSaved(false);};
   const saveEdit=()=>{dispatch({type:"UPDATE_USER",payload:{id:editId,name:editForm.name,phone:editForm.phone,type:editForm.type,isOfficial:editForm.isOfficial,isAdmin:editForm.isAdmin,isSubAdmin:editForm.isSubAdmin,adminSeriesIds:editForm.adminSeriesIds||[],license:editForm.license,licenseValid:editForm.licenseValid,kartNumber:parseInt(editForm.kartNumber)||undefined,club:editForm.club,dob:editForm.dob,transponder:editForm.transponder,class:editForm.class,country:editForm.country,dispensations:editForm.dispensations}});setSaved(true);setTimeout(()=>setSaved(false),2000);};
@@ -4767,8 +4767,8 @@ function AdminUsers({state,dispatch}){
     <SH title="Brugere" sub={`${state.users.length} registrerede`}/>
     <Input value={search} onChange={setSearch} placeholder="Søg på navn eller e-mail..."/>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-      <button onClick={()=>setOnlyRegistered(v=>!v)} style={{background:onlyRegistered?`${C.blue}22`:C.surface2,border:`1px solid ${onlyRegistered?C.blue:C.border}`,borderRadius:6,padding:"6px 10px",color:onlyRegistered?C.blue:C.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:700}}>{onlyRegistered?"✓ ":""}Kun registreret i app'en (skjul CSV-import)</button>
-      <button onClick={()=>setOnlyManual(v=>!v)} style={{background:onlyManual?`${C.purple}22`:C.surface2,border:`1px solid ${onlyManual?C.purple:C.border}`,borderRadius:6,padding:"6px 10px",color:onlyManual?C.purple:C.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:700}}>{onlyManual?"✓ ":""}Kun manuelt tilføjede</button>
+      <button onClick={()=>setHideCsv(v=>!v)} style={{background:hideCsv?`${C.blue}22`:C.surface2,border:`1px solid ${hideCsv?C.blue:C.border}`,borderRadius:6,padding:"6px 10px",color:hideCsv?C.blue:C.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:700}}>{hideCsv?"✓ ":""}Skjul CSV-import</button>
+      <button onClick={()=>setHideManual(v=>!v)} style={{background:hideManual?`${C.purple}22`:C.surface2,border:`1px solid ${hideManual?C.purple:C.border}`,borderRadius:6,padding:"6px 10px",color:hideManual?C.purple:C.textMuted,cursor:"pointer",fontSize:12,fontFamily:"inherit",fontWeight:700}}>{hideManual?"✓ ":""}Skjul manuelt tilføjede</button>
       <span style={{color:C.textDim,fontSize:11}}>{filtered.length}/{state.users.length}</span>
     </div>
     {filtered.map(u=>{
