@@ -221,7 +221,7 @@ const STR={
     licenseNumber:"Licensnummer",scanOrEnterLicense:"Scan eller indtast licens...",switchDriver:"Skift kører",
     registered:"registreret",thisSession:"denne session",scanPrefix:"Scan",scanOrEnterBarcode:"Scan eller indtast stregkode...",
     controlScanTitle:"🔍 Kontrolscan",controlScanHint:"Scan en stregkode her uden at vælge en del først — finder selv ud af hvilken del det er, hvis koden allerede er kendt for denne kører.",
-    noMatchTitle:"Koden matcher ikke noget kendt",noMatchHint:"Vælg hvilken del denne kode hører til:",
+    noMatchTitle:"Koden matcher ikke noget kendt",noMatchHint:"Vælg hvilken del denne kode hører til:",backToControlScan:"🔍 Kontrolscan",
     knownCodes:"Kendte koder:",noneYet:"Ingen registreret endnu",newFor:"Nyt",newCode:"Ny kode:",
     alreadyRegistered:"Allerede registreret",
     tireConfirm:(n,max)=>`Dette bliver nr. ${n} af (normalt) ${max}. Bekræft at det skal tilføjes.`,
@@ -259,7 +259,7 @@ const STR={
     licenseNumber:"License number",scanOrEnterLicense:"Scan or enter license...",switchDriver:"Switch driver",
     registered:"registered",thisSession:"this session",scanPrefix:"Scan",scanOrEnterBarcode:"Scan or enter barcode...",
     controlScanTitle:"🔍 Control scan",controlScanHint:"Scan a barcode here without picking a part first — it figures out which part it is automatically if the code is already known for this driver.",
-    noMatchTitle:"That code doesn't match anything known",noMatchHint:"Choose which part this code belongs to:",
+    noMatchTitle:"That code doesn't match anything known",noMatchHint:"Choose which part this code belongs to:",backToControlScan:"🔍 Control scan",
     knownCodes:"Known codes:",noneYet:"None registered yet",newFor:"New",newCode:"New code:",
     alreadyRegistered:"Already registered",
     tireConfirm:(n,max)=>`This will be no. ${n} of (normally) ${max}. Confirm it should be added.`,
@@ -650,7 +650,10 @@ function ScanMode({ev,users,sessions,scans,addScan,scanLimits,me}){
       </div>
 
       {activePart&&<Card style={{borderLeft:`3px solid ${C.red}`}}>
-        <div style={{color:C.text,fontWeight:700,marginBottom:8}}>{STR.scanPrefix} {PARTS[activePart].toLowerCase()}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{color:C.text,fontWeight:700}}>{STR.scanPrefix} {PARTS[activePart].toLowerCase()}</div>
+          <Btn small variant="ghost" onClick={()=>setActivePart(null)}>{STR.backToControlScan}</Btn>
+        </div>
         <Input inputRef={inputRef} value={code} onChange={setCode} onKeyDown={onKeyDown(v=>handlePartScan(activePart,v))} placeholder={STR.scanOrEnterBarcode} autoFocus onCamera={()=>setCameraFor("part")}/>
         <div style={{color:C.textDim,fontSize:11}}>
           {partBarcodes(driver.id,activePart).length>0
