@@ -268,10 +268,24 @@ function notifMutedForUser(u,n,events){
 
 // ── AUTH / PROFILE HELPERS ───────────────────────────────────────
 // Converts a row from the "profiles" table into the app's user object
+// Splits an existing single "name" into a first-guess firstName/lastName (first word = first
+// name, everything else = last name) — used only as a one-time migration starting point for
+// people who registered before the fields existed. Not always right (e.g. multi-word first
+// names), which is expected — it's a starting guess, not a guarantee.
+function splitNameFallback(name){
+  const parts=(name||"").trim().split(/\s+/).filter(Boolean);
+  if(!parts.length)return{firstName:"",lastName:""};
+  return{firstName:parts[0],lastName:parts.slice(1).join(" ")};
+}
+// The single source of truth for "name" from here on: kept in sync from firstName+lastName
+// wherever those are edited, so every other screen that just reads "name" (kart register, PDF
+// reports, penalties, notifications, admin lists, etc.) keeps working untouched.
+function combineName(firstName,lastName){return[firstName,lastName].map(s=>(s||"").trim()).filter(Boolean).join(" ");}
+
 function rowToUser(r){
   if(!r)return null;
   return{
-    id:r.id,type:r.type||"driver",name:r.name||"",email:r.email||"",
+    id:r.id,type:r.type||"driver",name:r.name||"",firstName:r.first_name||"",lastName:r.last_name||"",email:r.email||"",
     phone:r.phone||"",license:r.license||"",licenseValid:r.license_valid??null,
     licenseImg:r.license_img||null,transponder:r.transponder||"",class:r.class||"",
     kartNumber:r.kart_number??undefined,dob:r.dob||"",club:r.club||"",clubCode:r.club_code||"",country:r.country||"",
@@ -289,7 +303,7 @@ function rowToUser(r){
 // Converts an app user object into a row in the "profiles" table
 function userToRow(u){
   return{
-    id:u.id,type:u.type,name:u.name,email:u.email,phone:u.phone||"",
+    id:u.id,type:u.type,name:u.name,first_name:u.firstName||null,last_name:u.lastName||null,email:u.email,phone:u.phone||"",
     license:u.license||"",license_valid:u.licenseValid??null,license_img:u.licenseImg||null,
     transponder:u.transponder||"",class:u.class||"",kart_number:u.kartNumber??null,
     dob:u.dob||"",club:u.club||"",club_code:u.clubCode||"",country:u.country||"",is_admin:!!u.isAdmin,is_official:!!u.isOfficial,can_send_notif:!!u.canSendNotif,last_seen_notif:u.lastSeenNotif||0,is_sub_admin:!!u.isSubAdmin,admin_series_ids:u.adminSeriesIds||[],
@@ -322,7 +336,7 @@ const T={
     // Login
     email:"E-mail",password:"Adgangskode",forgotPw:"Glemt adgangskode?",createUser:"Opret ny bruger",continueGuest:"Fortsæt som gæst",guestAccess:"(Docs & Livetiming)",wrongLogin:"Forkert e-mail eller adgangskode",loggingIn:"Logger ind...",notConfigured:"Supabase er ikke konfigureret",
     // Signup
-    signupTitle:"Opret bruger",iAm:"Jeg er",roleDriver:"Kører",roleParent:"Team Chef",roleOfficial:"Official",name:"Navn",repeatPw:"Gentag adgangskode",optionalNote:"Resten er valgfrit og kan udfyldes senere under Profil.",phone:"Telefon",licenseNo:"Licensnummer",club:"Klub",createLogin:"Opret & log ind",creating:"Opretter...",writeName:"Skriv dit navn",writeFullName:"Skriv venligst både for- og efternavn",writeEmail:"Skriv din e-mail",pwMin:"Adgangskoden skal være mindst 6 tegn",pwMismatch:"Adgangskoderne er ikke ens",dobRequired:"Udfyld venligst fødselsdato",pwRequirements:"Adgangskoden skal være mindst 10 tegn med tal, mindst 2 bogstaver (heraf ét stort) og ét specialtegn",pwRequirementsHint:"Min. 10 tegn, mindst 1 tal, mindst 2 bogstaver (heraf 1 stort) og 1 specialtegn",confirmEmailMsg:"Konto oprettet! Bekræft din e-mail via linket vi har sendt dig, og log derefter ind.",
+    signupTitle:"Opret bruger",iAm:"Jeg er",roleDriver:"Kører",roleParent:"Team Chef",roleOfficial:"Official",name:"Navn",firstName:"Fornavn",lastName:"Efternavn",repeatPw:"Gentag adgangskode",optionalNote:"Resten er valgfrit og kan udfyldes senere under Profil.",phone:"Telefon",licenseNo:"Licensnummer",club:"Klub",createLogin:"Opret & log ind",creating:"Opretter...",writeName:"Skriv dit navn",writeFullName:"Skriv venligst både for- og efternavn",writeEmail:"Skriv din e-mail",pwMin:"Adgangskoden skal være mindst 6 tegn",pwMismatch:"Adgangskoderne er ikke ens",dobRequired:"Udfyld venligst fødselsdato",pwRequirements:"Adgangskoden skal være mindst 10 tegn med tal, mindst 2 bogstaver (heraf ét stort) og ét specialtegn",pwRequirementsHint:"Min. 10 tegn, mindst 1 tal, mindst 2 bogstaver (heraf 1 stort) og 1 specialtegn",confirmEmailMsg:"Konto oprettet! Bekræft din e-mail via linket vi har sendt dig, og log derefter ind.",
     // Calendar
     raceCalendar:"Løbskalender",raceCalendarSub:"Rotax Danmark 2026",registered:"TILMELDT",open:"ÅBEN",upcoming:"KOMMENDE",signups:"tilm.",raceOverview:"Løbsoversigt",register:"TILMELD →",regOpensLater:"Tilmelding åbner senere",youAreRegistered:"✓ Du er tilmeldt",
     // General
@@ -361,7 +375,7 @@ const T={
     weightPenalty:"Underweight (placed last)",nosePenalty:"Pushed front fairing (+5 sec / fastest lap removed in qual)",
     markReady:"Report & send ready signal",inspectionTitle:"Reporting",officialNotif:"Officials only",
     email:"Email",password:"Password",forgotPw:"Forgot password?",createUser:"Create new user",continueGuest:"Continue as guest",guestAccess:"(Docs & Live Timing)",wrongLogin:"Wrong email or password",loggingIn:"Logging in...",notConfigured:"Supabase is not configured",
-    signupTitle:"Create user",iAm:"I am",roleDriver:"Driver",roleParent:"Team Chef",roleOfficial:"Official",name:"Name",repeatPw:"Repeat password",optionalNote:"The rest is optional and can be filled in later under Profile.",phone:"Phone",licenseNo:"License number",club:"Club",createLogin:"Create & log in",creating:"Creating...",writeName:"Enter your name",writeFullName:"Please enter both first and last name",writeEmail:"Enter your email",pwMin:"Password must be at least 6 characters",pwMismatch:"Passwords do not match",dobRequired:"Please fill in your date of birth",pwRequirements:"Password must be at least 10 characters with a number, at least 2 letters (one uppercase), and one special character",pwRequirementsHint:"Min. 10 characters, at least 1 number, at least 2 letters (1 uppercase), and 1 special character",confirmEmailMsg:"Account created! Confirm your email via the link we sent you, then log in.",
+    signupTitle:"Create user",iAm:"I am",roleDriver:"Driver",roleParent:"Team Chef",roleOfficial:"Official",name:"Name",firstName:"First name",lastName:"Last name",repeatPw:"Repeat password",optionalNote:"The rest is optional and can be filled in later under Profile.",phone:"Phone",licenseNo:"License number",club:"Club",createLogin:"Create & log in",creating:"Creating...",writeName:"Enter your name",writeFullName:"Please enter both first and last name",writeEmail:"Enter your email",pwMin:"Password must be at least 6 characters",pwMismatch:"Passwords do not match",dobRequired:"Please fill in your date of birth",pwRequirements:"Password must be at least 10 characters with a number, at least 2 letters (one uppercase), and one special character",pwRequirementsHint:"Min. 10 characters, at least 1 number, at least 2 letters (1 uppercase), and 1 special character",confirmEmailMsg:"Account created! Confirm your email via the link we sent you, then log in.",
     raceCalendar:"Race calendar",raceCalendarSub:"Rotax Denmark 2026",registered:"REGISTERED",open:"OPEN",upcoming:"UPCOMING",signups:"signed up",raceOverview:"Race overview",register:"REGISTER →",regOpensLater:"Registration opens later",youAreRegistered:"✓ You are registered",
     save:"Save",cancel:"Cancel",edit:"Edit",delete:"Delete",saved:"Saved",none:"None",loading:"Loading...",race:"Race",allRaces:"All races",all:"All",classLabel:"Class",session:"Session",updated:"Updated",
     kartNumberSub:"Choose your number in your class",free:"Free",taken:"Taken",
@@ -926,7 +940,7 @@ function attachRegistrations(events,regRows){
 // ── imported_users table mapping (children + CSV-imported drivers, i.e. users without their own
 // Supabase Auth account) ────────────────────────────────────────────────────────────────────
 function importedUserToRow(u){
-  return {id:u.id,type:u.type||"driver",name:u.name||null,email:u.email||null,license:u.license||null,
+  return {id:u.id,type:u.type||"driver",name:u.name||null,first_name:u.firstName||null,last_name:u.lastName||null,email:u.email||null,license:u.license||null,
     license_valid:u.licenseValid??null,license_img:u.licenseImg||null,license_type:u.licenseType||null,
     transponder:u.transponder||null,class:u.class||null,kart_number:u.kartNumber??null,dob:u.dob||null,
     phone:u.phone||null,parent_id:u.parentId||null,club:u.club||null,club_code:u.clubCode||null,
@@ -935,7 +949,7 @@ function importedUserToRow(u){
     approved_events:u.approvedEvents||[],dispensations:u.dispensations||[],import_batch:u.importBatch||null,source:u.source||null};
 }
 function rowToImportedUser(r){
-  return {id:r.id,type:r.type||"driver",name:r.name||"",email:r.email||"",license:r.license||"",licenseValid:r.license_valid,
+  return {id:r.id,type:r.type||"driver",name:r.name||"",firstName:r.first_name||"",lastName:r.last_name||"",email:r.email||"",license:r.license||"",licenseValid:r.license_valid,
     licenseImg:r.license_img,licenseType:r.license_type||"",transponder:r.transponder||"",class:r.class||"",
     kartNumber:r.kart_number??undefined,dob:r.dob||"",phone:r.phone||"",parentId:r.parent_id||null,club:r.club||"",
     clubCode:r.club_code||"",country:r.country||"",engineMake:r.engine_make||"",kartMake:r.kart_make||"",
@@ -1598,7 +1612,7 @@ function ForgotScreen({onBack}){
 function SignupScreen({onBack,onDone,clubs,dispatch,state}){
   const t=useT();
   const [type,setType]=useState("driver");
-  const [f,setF]=useState({name:"",email:"",pw:"",pw2:"",phone:"",dob:"",license:"",transponder:"",club:"",country:"DK"});
+  const [f,setF]=useState({firstName:"",lastName:"",email:"",pw:"",pw2:"",phone:"",dob:"",license:"",transponder:"",club:"",country:"DK"});
   const [err,setErr]=useState("");const [busy,setBusy]=useState(false);
   const [confirmMsg,setConfirmMsg]=useState("");
   const set=(k,v)=>setF(o=>({...o,[k]:v}));
@@ -1617,8 +1631,7 @@ function SignupScreen({onBack,onDone,clubs,dispatch,state}){
 
   const submit=async()=>{
     setErr("");
-    if(!f.name.trim())return setErr(t.writeName);
-    if(!f.name.trim().includes(" ")||f.name.trim().split(" ").filter(Boolean).length<2)return setErr(t.writeFullName);
+    if(!f.firstName.trim()||!f.lastName.trim())return setErr(t.writeFullName);
     if(!f.email.trim())return setErr(t.writeEmail);
     if(!f.dob)return setErr(t.dobRequired);
     if(!passwordValid(f.pw))return setErr(t.pwRequirements);
@@ -1631,7 +1644,7 @@ function SignupScreen({onBack,onDone,clubs,dispatch,state}){
       const uid=data.user?.id;
       if(!uid){setErr("Kunne ikke oprette bruger – prøv igen");setBusy(false);return;}
       const baseType=type==="official"?"driver":type;
-      const newUser={id:uid,type:baseType,name:f.name.trim(),email:f.email.trim(),phone:f.phone,dob:f.dob,
+      const newUser={id:uid,type:baseType,name:combineName(f.firstName,f.lastName),firstName:f.firstName.trim(),lastName:f.lastName.trim(),email:f.email.trim(),phone:f.phone,dob:f.dob,
         license:f.license,transponder:f.transponder,club:f.club,country:f.country,isAdmin:false,isOfficial:type==="official",approvedEvents:[],licenseValid:null};
       const row=userToRow(newUser);
       const {error:pErr}=await sb.from("profiles").upsert(row);
@@ -1670,7 +1683,10 @@ function SignupScreen({onBack,onDone,clubs,dispatch,state}){
         </button>
       )}
     </div>
-    <Input label={t.name+" *"} value={f.name} onChange={v=>set("name",v)} placeholder={lang==="en"?"First and last name":"For- og efternavn"}/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      <Input label={t.firstName+" *"} value={f.firstName} onChange={v=>set("firstName",v)} placeholder={t.firstName}/>
+      <Input label={t.lastName+" *"} value={f.lastName} onChange={v=>set("lastName",v)} placeholder={t.lastName}/>
+    </div>
     <Sel label={lang==="en"?"Country / nationality":"Land / nationalitet"} value={f.country} onChange={v=>set("country",v)} options={countryOptions(lang)}/>
     <Input label={t.email+" *"} value={f.email} onChange={v=>set("email",v)} placeholder="din@email.dk" type="email"/>
     <Input label={t.password+" *"} value={f.pw} onChange={v=>set("pw",v)} type="password" placeholder="••••••••••"/>
@@ -2005,11 +2021,18 @@ function ProfileEditor({u,dispatch,classRules,clubs}){
   const [f,setF]=useState({});
   const [saved,setSaved]=useState(false);
   const [err,setErr]=useState("");
-  const start=()=>{setF({name:u.name||"",dob:u.dob||"",phone:u.phone||"",license:u.license||"",transponder:u.transponder||"",club:u.club||"",country:u.country||"DK"});setEdit(true);setSaved(false);setErr("");};
+  const start=()=>{
+    // Fall back to a live-computed guess (first word / rest of the name) for anyone who hasn't got
+    // real firstName/lastName saved yet — this is only a starting point shown in the edit form; it
+    // only actually gets saved once they confirm it (or fix it) and hit save.
+    const guess=splitNameFallback(u.name);
+    setF({firstName:u.firstName||guess.firstName,lastName:u.lastName||guess.lastName,dob:u.dob||"",phone:u.phone||"",license:u.license||"",transponder:u.transponder||"",club:u.club||"",country:u.country||"DK"});
+    setEdit(true);setSaved(false);setErr("");
+  };
   const save=()=>{
     setErr("");
-    if(!f.name||!f.name.trim().includes(" ")||f.name.trim().split(" ").filter(Boolean).length<2){setErr(t.writeFullName);return;}
-    dispatch({type:"UPDATE_USER",payload:{id:u.id,name:f.name,dob:f.dob,phone:f.phone,license:f.license,transponder:f.transponder,club:f.club,country:f.country}});
+    if(!f.firstName?.trim()||!f.lastName?.trim()){setErr(t.writeFullName);return;}
+    dispatch({type:"UPDATE_USER",payload:{id:u.id,name:combineName(f.firstName,f.lastName),firstName:f.firstName.trim(),lastName:f.lastName.trim(),dob:f.dob,phone:f.phone,license:f.license,transponder:f.transponder,club:f.club,country:f.country}});
     setSaved(true);setEdit(false);setTimeout(()=>setSaved(false),2000);
   };
   if(!edit)return <Card>
@@ -2026,7 +2049,10 @@ function ProfileEditor({u,dispatch,classRules,clubs}){
   return <Card style={{borderLeft:`3px solid ${C.blue}`}}>
     <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:10}}>{t.edit.toUpperCase()}</div>
     {err&&<div style={{background:`${C.red}22`,border:`1px solid ${C.red}44`,borderRadius:6,padding:8,marginBottom:8,color:C.red,fontSize:12,fontWeight:600,textAlign:"center"}}>{err}</div>}
-    <Input label={t.name} value={f.name} onChange={v=>setF(o=>({...o,name:v}))} placeholder={t.name}/>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      <Input label={t.firstName} value={f.firstName} onChange={v=>setF(o=>({...o,firstName:v}))} placeholder={t.firstName}/>
+      <Input label={t.lastName} value={f.lastName} onChange={v=>setF(o=>({...o,lastName:v}))} placeholder={t.lastName}/>
+    </div>
     <Sel label={lang==="en"?"Country / nationality":"Land / nationalitet"} value={f.country} onChange={v=>setF(o=>({...o,country:v}))} options={countryOptions(lang)}/>
     <Input label={t.dob} value={f.dob} onChange={v=>setF(o=>({...o,dob:v}))} type="date"/>
     <Input label={t.phone} value={f.phone} onChange={v=>setF(o=>({...o,phone:v}))} placeholder={t.phone}/>
@@ -7777,7 +7803,7 @@ function DriverListScreen({state,dispatch,useGlobalEv=false,seriesScope=null}){
   const [saved,setSaved]=useState(false);
   // Export tooling (CSV / MyLaps Orbit 5) — only relevant for the admin dashboard usage
   // (useGlobalEv), not the simpler shared driver-tap-to-view screen officials use.
-  const ALL_FIELDS=[t.admFieldName,t.admFieldEmail,t.admFieldClass,t.admFieldKart,t.admFieldTransponder,t.admFieldLicense,t.admFieldClub,t.admFieldClubCode,t.admFieldNationality,t.admFieldPhone,t.admFieldPaddockL,t.admFieldPaddockD,t.admFieldSlicks,t.admFieldWets,t.admFieldPaid,t.admFieldLicenseOk];
+  const ALL_FIELDS=[t.admFieldName,t.firstName,t.lastName,t.admFieldEmail,t.admFieldClass,t.admFieldKart,t.admFieldTransponder,t.admFieldLicense,t.admFieldClub,t.admFieldClubCode,t.admFieldNationality,t.admFieldPhone,t.admFieldPaddockL,t.admFieldPaddockD,t.admFieldSlicks,t.admFieldWets,t.admFieldPaid,t.admFieldLicenseOk];
   const [csvFields,setCsvFields]=useState([t.admFieldName,t.admFieldEmail,t.admFieldClass,t.admFieldKart,t.admFieldTransponder,t.admFieldLicense]);
   const [mylapsFields,setMylapsFields]=useState([t.admFieldKart,t.admFieldTransponder,t.admFieldName,t.admFieldClass]);
   const [showCsvPicker,setShowCsvPicker]=useState(false);
@@ -7792,8 +7818,9 @@ function DriverListScreen({state,dispatch,useGlobalEv=false,seriesScope=null}){
   const rowFor=(r)=>{
     const u=state.users.find(u=>u.id===r.userId)||{};
     const paddockParts=(r.paddockSpace||"").split("×").map(s=>s.trim().replace("m",""));
+    const nameGuess=splitNameFallback(u.name);
     return {
-      [t.admFieldName]:u.name||"",[t.admFieldEmail]:u.email||"",[t.admFieldClass]:r.class||"",
+      [t.admFieldName]:u.name||"",[t.firstName]:u.firstName||nameGuess.firstName,[t.lastName]:u.lastName||nameGuess.lastName,[t.admFieldEmail]:u.email||"",[t.admFieldClass]:r.class||"",
       [t.admFieldKart]:String(u.kartNumber||""),[t.admFieldTransponder]:u.transponder||"",
       [t.admFieldLicense]:u.license||"",[t.admFieldClub]:u.club||"",[t.admFieldClubCode]:clubCodeFor(u),[t.admFieldNationality]:u.country||"",[t.admFieldPhone]:u.phone||"",
       [t.admFieldPaddockL]:paddockParts[0]||"",[t.admFieldPaddockD]:paddockParts[1]||"",
@@ -7820,10 +7847,11 @@ function DriverListScreen({state,dispatch,useGlobalEv=false,seriesScope=null}){
 
   const openDriver=(item)=>{
     setSelDriver(item);setEditMode(false);setSaved(false);
-    setEditForm({name:item.user.name,phone:item.user.phone||"",license:item.user.license||"",transponder:item.user.transponder||"",kartNumber:item.user.kartNumber||"",club:item.user.club||"",class:item.reg.class||""});
+    const guess=splitNameFallback(item.user.name);
+    setEditForm({firstName:item.user.firstName||guess.firstName,lastName:item.user.lastName||guess.lastName,phone:item.user.phone||"",license:item.user.license||"",transponder:item.user.transponder||"",kartNumber:item.user.kartNumber||"",club:item.user.club||"",class:item.reg.class||""});
   };
   const saveDriver=()=>{
-    dispatch({type:"UPDATE_USER",payload:{id:selDriver.user.id,name:editForm.name,phone:editForm.phone,license:editForm.license,transponder:editForm.transponder,kartNumber:parseInt(editForm.kartNumber)||undefined,club:editForm.club}});
+    dispatch({type:"UPDATE_USER",payload:{id:selDriver.user.id,name:combineName(editForm.firstName,editForm.lastName),firstName:(editForm.firstName||"").trim(),lastName:(editForm.lastName||"").trim(),phone:editForm.phone,license:editForm.license,transponder:editForm.transponder,kartNumber:parseInt(editForm.kartNumber)||undefined,club:editForm.club}});
     if(editForm.class&&editForm.class!==selDriver.reg.class)dispatch({type:"UPDATE_REGISTRATION",eventId:ev.id,userId:selDriver.user.id,payload:{class:editForm.class}});
     setSaved(true);setTimeout(()=>setSaved(false),2000);
   };
@@ -7851,7 +7879,10 @@ function DriverListScreen({state,dispatch,useGlobalEv=false,seriesScope=null}){
       </div>
       {editMode?<Card>
         <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:10}}>{t.edit.toUpperCase()}</div>
-        <Input label={t.name} value={editForm.name} onChange={v=>setEditForm(f=>({...f,name:v}))} placeholder={t.admFullName}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Input label={t.firstName} value={editForm.firstName} onChange={v=>setEditForm(f=>({...f,firstName:v}))} placeholder={t.firstName}/>
+          <Input label={t.lastName} value={editForm.lastName} onChange={v=>setEditForm(f=>({...f,lastName:v}))} placeholder={t.lastName}/>
+        </div>
         <Input label={t.admFieldPhone} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} placeholder={t.admMobileNumber}/>
         <Input label={t.admLicenseNumber} value={editForm.license} onChange={v=>setEditForm(f=>({...f,license:v}))} placeholder="DK-2026-XXXX"/>
         <Input label={t.admFieldTransponder} value={editForm.transponder} onChange={v=>setEditForm(f=>({...f,transponder:v}))} placeholder="T-XXXX"/>
@@ -8027,11 +8058,12 @@ function LicenseControl({state,dispatch,useGlobalEv=false,seriesScope=null}){
   const openEdit=(item)=>{
     const u=item.user;
     setEditUser(item);
-    setEditForm({name:u.name||"",phone:u.phone||"",license:u.license||"",transponder:u.transponder||"",kartNumber:u.kartNumber||"",licenseValid:u.licenseValid??null});
+    const guess=splitNameFallback(u.name);
+    setEditForm({firstName:u.firstName||guess.firstName,lastName:u.lastName||guess.lastName,phone:u.phone||"",license:u.license||"",transponder:u.transponder||"",kartNumber:u.kartNumber||"",licenseValid:u.licenseValid??null});
     setSaved(false);
   };
   const saveEdit=()=>{
-    dispatch({type:"UPDATE_USER",payload:{id:editUser.user.id,name:editForm.name,phone:editForm.phone,license:editForm.license,transponder:editForm.transponder,kartNumber:parseInt(editForm.kartNumber)||undefined,licenseValid:editForm.licenseValid}});
+    dispatch({type:"UPDATE_USER",payload:{id:editUser.user.id,name:combineName(editForm.firstName,editForm.lastName),firstName:(editForm.firstName||"").trim(),lastName:(editForm.lastName||"").trim(),phone:editForm.phone,license:editForm.license,transponder:editForm.transponder,kartNumber:parseInt(editForm.kartNumber)||undefined,licenseValid:editForm.licenseValid}});
     setSaved(true);setTimeout(()=>{setSaved(false);setEditUser(null);},1500);
   };
 
@@ -8073,7 +8105,10 @@ function LicenseControl({state,dispatch,useGlobalEv=false,seriesScope=null}){
       </div>
       <Card style={{borderLeft:`3px solid ${C.red}`}}>
         <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:12}}>{t.admEditInfo}</div>
-        <Input label={t.name} value={editForm.name} onChange={v=>setEditForm(f=>({...f,name:v}))} placeholder={t.admFullName}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <Input label={t.firstName} value={editForm.firstName} onChange={v=>setEditForm(f=>({...f,firstName:v}))} placeholder={t.firstName}/>
+          <Input label={t.lastName} value={editForm.lastName} onChange={v=>setEditForm(f=>({...f,lastName:v}))} placeholder={t.lastName}/>
+        </div>
         <Input label={t.admFieldPhone} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} placeholder={t.admMobileNumber}/>
         <Input label={t.admLicenseNumber} value={editForm.license} onChange={v=>setEditForm(f=>({...f,license:v}))} placeholder="DK-2026-XXXX"/>
         <div style={{marginBottom:10}}>
@@ -9158,14 +9193,14 @@ function App(){
           const {error}=await sb.from("profiles").update(row).eq("id",action.payload.id);
           if(error){
             console.error("Supabase profiles update:",error);
-            // If this is specifically because a newer column (notif_prefs, report_logo, source)
-            // doesn't exist yet (migration not run), retry without it rather than silently failing
-            // every profile save from now on — better to save everything else than to lose it all
-            // over one missing column.
-            if(String(error.message||"").includes("notif_prefs")||String(error.message||"").includes("report_logo")||String(error.message||"").includes("source")){
-              const {notif_prefs,report_logo,source,...rowWithoutNewCols}=row;
+            // If this is specifically because a newer column (notif_prefs, report_logo, source,
+            // first_name, last_name) doesn't exist yet (migration not run), retry without those
+            // rather than silently failing every profile save from now on — better to save
+            // everything else than to lose it all over one missing column.
+            if(String(error.message||"").includes("notif_prefs")||String(error.message||"").includes("report_logo")||String(error.message||"").includes("source")||String(error.message||"").includes("first_name")||String(error.message||"").includes("last_name")){
+              const {notif_prefs,report_logo,source,first_name,last_name,...rowWithoutNewCols}=row;
               const retry=await sb.from("profiles").update(rowWithoutNewCols).eq("id",action.payload.id);
-              if(retry.error)console.error("Supabase profiles update (retry without notif_prefs/report_logo/source):",retry.error);
+              if(retry.error)console.error("Supabase profiles update (retry without notif_prefs/report_logo/source/first_name/last_name):",retry.error);
             }
           }
         }
@@ -9174,7 +9209,19 @@ function App(){
     if(action.type==="UPDATE_USER"&&!isAuthId(action.payload?.id)){
       // Imported/child user – persist to imported_users instead of profiles.
       const existing=(stateRef.current.importedUsers||[]).find(u=>u.id===action.payload.id);
-      if(existing)sb.from("imported_users").update(importedUserToRow({...existing,...action.payload})).eq("id",action.payload.id).then(({error})=>{if(error)console.error("Supabase imported_users update:",error);});
+      if(existing){
+        const impRow=importedUserToRow({...existing,...action.payload});
+        sb.from("imported_users").update(impRow).eq("id",action.payload.id).then(({error})=>{
+          if(error){
+            console.error("Supabase imported_users update:",error);
+            // Same missing-column safety net as the profiles table above.
+            if(String(error.message||"").includes("first_name")||String(error.message||"").includes("last_name")){
+              const {first_name,last_name,...rowWithoutNewCols}=impRow;
+              sb.from("imported_users").update(rowWithoutNewCols).eq("id",action.payload.id).then(({error:retryErr})=>{if(retryErr)console.error("Supabase imported_users update (retry without first_name/last_name):",retryErr);});
+            }
+          }
+        });
+      }
     }
     if(action.type==="ADD_CHILD"&&isAuthId(action.parentId)&&action._newChildIds){
       // Persist the parent's updated childIds (ChildManager sends the list along)
