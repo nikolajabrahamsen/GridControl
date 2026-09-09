@@ -4686,8 +4686,11 @@ function AdminUsers({state,dispatch}){
   const [saved,setSaved]=useState(false);
   const filtered=state.users.filter(u=>u.name.toLowerCase().includes(search.toLowerCase())||u.email?.toLowerCase().includes(search.toLowerCase())).filter(u=>!hideCsv||u.source!=="csv-import").filter(u=>!hideManual||u.source!=="manual").slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"","da"));
 
-  const openEdit=u=>{setEditId(u.id);setEditForm({name:u.name,phone:u.phone||"",type:u.type,isOfficial:u.isOfficial||false,isAdmin:u.isAdmin||false,isSubAdmin:u.isSubAdmin||false,adminSeriesIds:u.adminSeriesIds||[],license:u.license||"",licenseValid:u.licenseValid??null,kartNumber:u.kartNumber||"",club:u.club||"",dob:u.dob||"",transponder:u.transponder||"",class:u.class||"",country:u.country||"DK",dispensations:u.dispensations||[]});setSaved(false);};
-  const saveEdit=()=>{dispatch({type:"UPDATE_USER",payload:{id:editId,name:editForm.name,phone:editForm.phone,type:editForm.type,isOfficial:editForm.isOfficial,isAdmin:editForm.isAdmin,isSubAdmin:editForm.isSubAdmin,adminSeriesIds:editForm.adminSeriesIds||[],license:editForm.license,licenseValid:editForm.licenseValid,kartNumber:parseInt(editForm.kartNumber)||undefined,club:editForm.club,dob:editForm.dob,transponder:editForm.transponder,class:editForm.class,country:editForm.country,dispensations:editForm.dispensations}});setSaved(true);setTimeout(()=>setSaved(false),2000);};
+  const openEdit=u=>{
+    const guess=splitNameFallback(u.name);
+    setEditId(u.id);setEditForm({firstName:u.firstName||guess.firstName,lastName:u.lastName||guess.lastName,phone:u.phone||"",type:u.type,isOfficial:u.isOfficial||false,isAdmin:u.isAdmin||false,isSubAdmin:u.isSubAdmin||false,adminSeriesIds:u.adminSeriesIds||[],license:u.license||"",licenseValid:u.licenseValid??null,kartNumber:u.kartNumber||"",club:u.club||"",dob:u.dob||"",transponder:u.transponder||"",class:u.class||"",country:u.country||"DK",dispensations:u.dispensations||[]});setSaved(false);
+  };
+  const saveEdit=()=>{dispatch({type:"UPDATE_USER",payload:{id:editId,name:combineName(editForm.firstName,editForm.lastName),firstName:(editForm.firstName||"").trim(),lastName:(editForm.lastName||"").trim(),phone:editForm.phone,type:editForm.type,isOfficial:editForm.isOfficial,isAdmin:editForm.isAdmin,isSubAdmin:editForm.isSubAdmin,adminSeriesIds:editForm.adminSeriesIds||[],license:editForm.license,licenseValid:editForm.licenseValid,kartNumber:parseInt(editForm.kartNumber)||undefined,club:editForm.club,dob:editForm.dob,transponder:editForm.transponder,class:editForm.class,country:editForm.country,dispensations:editForm.dispensations}});setSaved(true);setTimeout(()=>setSaved(false),2000);};
   const deleteUser=async(usr)=>{
     if(!window.confirm(`Slet ${usr.name} permanent?\n\nDette fjerner brugerens profil og login. Kan ikke fortrydes.`))return;
     // Remove from Supabase if a real Auth user
@@ -4729,7 +4732,8 @@ function AdminUsers({state,dispatch}){
       </Card>
       <Card>
         <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:10}}>{t.admPersonalInfo}</div>
-        <Input label="Navn" value={editForm.name} onChange={v=>setEditForm(f=>({...f,name:v}))} placeholder="Fuldt navn"/>
+        <Input label={t.firstName} value={editForm.firstName} onChange={v=>setEditForm(f=>({...f,firstName:v}))} placeholder={t.firstName}/>
+        <Input label={t.lastName} value={editForm.lastName} onChange={v=>setEditForm(f=>({...f,lastName:v}))} placeholder={t.lastName}/>
         <Sel label="Land / nationalitet" value={editForm.country||"DK"} onChange={v=>setEditForm(f=>({...f,country:v}))} options={countryOptions(lang)}/>
         <Input label="Fødselsdato" value={editForm.dob} onChange={v=>setEditForm(f=>({...f,dob:v}))} type="date"/>
         <Input label="Telefon" value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} placeholder="Mobilnummer"/>
