@@ -1333,6 +1333,26 @@ function reducer(state,action){
       return{...ev,techPdfs:exists?ev.techPdfs.map(p=>p.id===action.techPdf.id?action.techPdf:p):[action.techPdf,...(ev.techPdfs||[])]};
     })};
     case "_RT_TECH_PDF_DELETE":return{...state,events:state.events.map(ev=>ev.id===action.eventId?{...ev,techPdfs:(ev.techPdfs||[]).filter(p=>p.id!==action.pdfId)}:ev)};
+    // Realtime landing for one profile row changing (see profiles_sync channel below) — merges just
+    // that one user's data directly from the postgres_changes payload, which is the fully committed
+    // row as of the write and needs no extra fetch. Replaces the old approach of re-fetching every
+    // single profile on any change (including this exact client's own write), which could race
+    // against that same write still finishing and overwrite it with a slightly stale snapshot —
+    // the actual cause of "my selection reverts" type bugs.
+    case "_RT_PROFILE_UPSERT":{
+      const updated=action.user;
+      const profiles=(state.authProfiles||[]).some(u=>u.id===updated.id)
+        ?state.authProfiles.map(u=>u.id===updated.id?updated:u)
+        :[...(state.authProfiles||[]),updated];
+      const users=mergeUsers(profiles,state.importedUsers);
+      const currentUser=state.currentUser?.id===updated.id?updated:state.currentUser;
+      return{...state,authProfiles:profiles,users,currentUser};
+    }
+    case "_RT_PROFILE_DELETE":{
+      const profiles=(state.authProfiles||[]).filter(u=>u.id!==action.userId);
+      const users=mergeUsers(profiles,state.importedUsers);
+      return{...state,authProfiles:profiles,users};
+    }
     case "_RT_READY_SIGNAL_UPSERT":return{...state,events:state.events.map(ev=>{
       if(ev.id!==action.eventId)return ev;
       const newKey=(action.signal.groups||[]).slice().sort().join(",");
@@ -6629,6 +6649,11 @@ function AdminKartRegister({state,dispatch}){
     if(!reassignId)return;
     const usr=state.users.find(x=>String(x.id)===String(reassignId));
     if(!usr)return;
+    // Release any number this driver already holds in this same class/pool first — otherwise they'd
+    // end up owning two numbers in the same class at once. The driver's own self-service claim
+    // screen already does this; this admin tool was missing the same safeguard.
+    const existingNum=myKartInClass(reg,activeCls,usr.id);
+    if(existingNum&&existingNum!==num)dispatch({type:"RELEASE_KART",registerId:activeRegisterId,className:activeCls,number:existingNum});
     dispatch({type:"CLAIM_KART",registerId:activeRegisterId,className:activeCls,number:num,ownerId:usr.id,ownerName:usr.name,ownerLicense:usr.license||""});
     setReassignId("");setSel(null);setMsg(`#${num}${t.admAssignedTo}${usr.name}`);
     forceSaveSoon();
@@ -9157,9 +9182,14 @@ function App(){
 
       // Realtime: profiles (new users / changes from other devices)
       profChannel=sb.channel("profiles_sync")
-        .on("postgres_changes",{event:"*",schema:"public",table:"profiles"},async()=>{
-          const fresh=await loadProfiles();
-          dispatch({type:"SET_PROFILES",payload:fresh});
+        .on("postgres_changes",{event:"INSERT",schema:"public",table:"profiles"},payload=>{
+          dispatch({type:"_RT_PROFILE_UPSERT",user:rowToUser(payload.new)});
+        })
+        .on("postgres_changes",{event:"UPDATE",schema:"public",table:"profiles"},payload=>{
+          dispatch({type:"_RT_PROFILE_UPSERT",user:rowToUser(payload.new)});
+        })
+        .on("postgres_changes",{event:"DELETE",schema:"public",table:"profiles"},payload=>{
+          dispatch({type:"_RT_PROFILE_DELETE",userId:payload.old.id});
         })
         .subscribe();
 
