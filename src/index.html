@@ -1037,6 +1037,14 @@ function reducer(state,action){
         });
         merged.sessionsMigrationDone=true;
       }
+      // One-time seed: fills state.faqItems with a starting set of FAQ entries the very first time
+      // the app loads after the self-service FAQ editor shipped (Admin → Opsætning → Rediger FAQ).
+      // Gated by faqSeeded (not just "is it empty") so that if an admin later deletes everything on
+      // purpose, it stays empty instead of quietly coming back on the next reload.
+      if(!merged.faqSeeded){
+        if(!merged.faqItems||!merged.faqItems.length)merged.faqItems=defaultFaqItems().map((it,i)=>({id:genId()+i,...it}));
+        merged.faqSeeded=true;
+      }
       return merged;
     }
     case "SET_PROFILES":{
@@ -1121,6 +1129,10 @@ function reducer(state,action){
     case "UPDATE_EVENT_SESSION":return{...state,events:state.events.map(ev=>ev.id===action.eventId?{...ev,sessions:(ev.sessions||[]).map(x=>x.id===action.sessionId?{...x,name:action.name}:x)}:ev)};
     case "REORDER_EVENT_SESSIONS":return{...state,events:state.events.map(ev=>ev.id===action.eventId?{...ev,sessions:action.sessions}:ev)};
     case "REORDER_SESSIONS":return{...state,sessions:action.sessions};
+    case "ADD_FAQ_ITEM":return{...state,faqItems:[...(state.faqItems||[]),{id:genId(),...action.payload}]};
+    case "UPDATE_FAQ_ITEM":return{...state,faqItems:(state.faqItems||[]).map(f=>f.id===action.id?{...f,...action.payload}:f)};
+    case "DELETE_FAQ_ITEM":return{...state,faqItems:(state.faqItems||[]).filter(f=>f.id!==action.id)};
+    case "REORDER_FAQ_ITEMS":return{...state,faqItems:action.items};
     case "ADD_REGULATION":return{...state,regulations:[...(state.regulations||[]),{id:Date.now(),...action.payload}]};
     case "DELETE_REGULATION":return{...state,regulations:(state.regulations||[]).filter(r=>r.id!==action.id)};
     case "ADD_CLUB":return{...state,clubs:[...(state.clubs||[]),{id:Date.now(),name:action.name,clubCode:action.clubCode||"",address:action.address||"",logoUrl:action.logoUrl||""}]};
@@ -2337,53 +2349,22 @@ function ReportLogoSettings({state,dispatch}){
 // ── HELP / FAQ ───────────────────────────────────────────────────
 // A reasonable starting set covering the most common things drivers/parents ask about — meant to
 // be expanded over time as real questions come in, not a complete reference on its own.
-function faqData(lang){
-  return lang==="en"?[
-    {category:"Registration",items:[
-      {q:"How do I register for a race?",a:"Go to the home screen, pick the race, and fill in the registration form — class, kart details, and payment method."},
-      {q:"Can I change my registration afterwards?",a:"Yes — contact the race organizer, and they can update it for you under Deltagerliste."},
-      {q:"Why do I need to fill in both first and last name?",a:"So reports, results, and official documents show your full name correctly — a single name isn't enough for that."},
-    ]},
-    {category:"Kart number",items:[
-      {q:"How do I get a kart number?",a:"Go to \"Kart number\" in the menu, pick your class, and claim an available number."},
-      {q:"Do I keep the same number all season?",a:"Yes — it's yours until it's released or the season ends. Some series use their own separate number list, so your number can differ between series."},
-    ]},
-    {category:"License",items:[
-      {q:"Why does my license show as \"pending\"?",a:"An official needs to approve it under Licens kontrol before it shows as OK. This usually happens on race day at license control."},
-    ]},
-    {category:"Payment",items:[
-      {q:"How do I pay for the race?",a:"Check the race's own info page for the payment details (usually MobilePay) — pay before the deadline shown there."},
-      {q:"How do I know if my payment has been registered?",a:"Under Licens kontrol / Deltagerliste, a green \"BETALT\" badge shows once the organizer has marked it as received."},
-    ]},
-    {category:"Notifications",items:[
-      {q:"I'm not getting notifications — what do I check?",a:"Go to Indstillinger and make sure push notifications are turned on, and that you haven't filtered out the series/class the notification was about."},
-    ]},
-    {category:"Penalties",items:[
-      {q:"How do I see if I got a penalty?",a:"Go to \"Straffe\" in the menu — approved penalties for the race show up there."},
-    ]},
-  ]:[
-    {category:"Tilmelding",items:[
-      {q:"Hvordan tilmelder jeg mig et løb?",a:"Gå til forsiden, vælg løbet, og udfyld tilmeldingen — klasse, kart-oplysninger og betalingsmetode."},
-      {q:"Kan jeg ændre min tilmelding bagefter?",a:"Ja — kontakt løbsarrangøren, de kan opdatere den for dig under Deltagerliste."},
-      {q:"Hvorfor skal jeg udfylde både for- og efternavn?",a:"Så rapporter, resultater og officielle dokumenter viser dit fulde navn korrekt — kun ét navn er ikke nok til det."},
-    ]},
-    {category:"Kartnummer",items:[
-      {q:"Hvordan får jeg et kartnummer?",a:"Gå til \"Kartnummer\" i menuen, vælg din klasse, og reservér et ledigt nummer."},
-      {q:"Beholder jeg samme nummer hele sæsonen?",a:"Ja — nummeret er dit indtil det frigives eller sæsonen slutter. Nogle serier har deres eget separate nummerregister, så nummeret kan variere mellem serier."},
-    ]},
-    {category:"Licens",items:[
-      {q:"Hvorfor står min licens som \"afventer\"?",a:"En official skal godkende den under Licens kontrol, før den viser OK. Det sker som regel på løbsdagen ved licenskontrollen."},
-    ]},
-    {category:"Betaling",items:[
-      {q:"Hvordan betaler jeg for løbet?",a:"Se betalingsoplysningerne på løbets egen infoside (typisk MobilePay) — betal inden fristen der er angivet."},
-      {q:"Hvordan ved jeg om min betaling er registreret?",a:"Under Licens kontrol / Deltagerliste vises et grønt \"BETALT\"-mærke, når arrangøren har markeret den som modtaget."},
-    ]},
-    {category:"Notifikationer",items:[
-      {q:"Jeg får ikke notifikationer — hvad tjekker jeg?",a:"Gå til Indstillinger og tjek at push-notifikationer er slået til, og at du ikke har filtreret den serie/klasse notifikationen handlede om fra."},
-    ]},
-    {category:"Straffe",items:[
-      {q:"Hvordan ser jeg om jeg har fået en straf?",a:"Gå til \"Straffe\" i menuen — godkendte straffe for løbet vises der."},
-    ]},
+// Starting content for the self-service FAQ editor (Admin → Opsætning → Rediger FAQ) — seeded once
+// into state.faqItems on first load after this shipped (see the migration in HYDRATE), and fully
+// editable from there afterwards. This function is no longer read directly by anything — it only
+// exists as that one-time seed source.
+function defaultFaqItems(){
+  return [
+    {category:"Tilmelding",categoryEn:"Registration",questionDa:"Hvordan tilmelder jeg mig et løb?",answerDa:"Gå til forsiden, vælg løbet, og udfyld tilmeldingen — klasse, kart-oplysninger og betalingsmetode.",questionEn:"How do I register for a race?",answerEn:"Go to the home screen, pick the race, and fill in the registration form — class, kart details, and payment method."},
+    {category:"Tilmelding",categoryEn:"Registration",questionDa:"Kan jeg ændre min tilmelding bagefter?",answerDa:"Ja — kontakt løbsarrangøren, de kan opdatere den for dig under Deltagerliste.",questionEn:"Can I change my registration afterwards?",answerEn:"Yes — contact the race organizer, and they can update it for you under Deltagerliste."},
+    {category:"Tilmelding",categoryEn:"Registration",questionDa:"Hvorfor skal jeg udfylde både for- og efternavn?",answerDa:"Så rapporter, resultater og officielle dokumenter viser dit fulde navn korrekt — kun ét navn er ikke nok til det.",questionEn:"Why do I need to fill in both first and last name?",answerEn:"So reports, results, and official documents show your full name correctly — a single name isn't enough for that."},
+    {category:"Kartnummer",categoryEn:"Kart number",questionDa:"Hvordan får jeg et kartnummer?",answerDa:"Gå til \"Kartnummer\" i menuen, vælg din klasse, og reservér et ledigt nummer.",questionEn:"How do I get a kart number?",answerEn:"Go to \"Kart number\" in the menu, pick your class, and claim an available number."},
+    {category:"Kartnummer",categoryEn:"Kart number",questionDa:"Beholder jeg samme nummer hele sæsonen?",answerDa:"Ja — nummeret er dit indtil det frigives eller sæsonen slutter. Nogle serier har deres eget separate nummerregister, så nummeret kan variere mellem serier.",questionEn:"Do I keep the same number all season?",answerEn:"Yes — it's yours until it's released or the season ends. Some series use their own separate number list, so your number can differ between series."},
+    {category:"Licens",categoryEn:"License",questionDa:"Hvorfor står min licens som \"afventer\"?",answerDa:"En official skal godkende den under Licens kontrol, før den viser OK. Det sker som regel på løbsdagen ved licenskontrollen.",questionEn:"Why does my license show as \"pending\"?",answerEn:"An official needs to approve it under Licens kontrol before it shows as OK. This usually happens on race day at license control."},
+    {category:"Betaling",categoryEn:"Payment",questionDa:"Hvordan betaler jeg for løbet?",answerDa:"Se betalingsoplysningerne på løbets egen infoside (typisk MobilePay) — betal inden fristen der er angivet.",questionEn:"How do I pay for the race?",answerEn:"Check the race's own info page for the payment details (usually MobilePay) — pay before the deadline shown there."},
+    {category:"Betaling",categoryEn:"Payment",questionDa:"Hvordan ved jeg om min betaling er registreret?",answerDa:"Under Licens kontrol / Deltagerliste vises et grønt \"BETALT\"-mærke, når arrangøren har markeret den som modtaget.",questionEn:"How do I know if my payment has been registered?",answerEn:"Under Licens kontrol / Deltagerliste, a green \"BETALT\" badge shows once the organizer has marked it as received."},
+    {category:"Notifikationer",categoryEn:"Notifications",questionDa:"Jeg får ikke notifikationer — hvad tjekker jeg?",answerDa:"Gå til Indstillinger og tjek at push-notifikationer er slået til, og at du ikke har filtreret den serie/klasse notifikationen handlede om fra.",questionEn:"I'm not getting notifications — what do I check?",answerEn:"Go to Indstillinger and make sure push notifications are turned on, and that you haven't filtered out the series/class the notification was about."},
+    {category:"Straffe",categoryEn:"Penalties",questionDa:"Hvordan ser jeg om jeg har fået en straf?",answerDa:"Gå til \"Straffe\" i menuen — godkendte straffe for løbet vises der.",questionEn:"How do I see if I got a penalty?",answerEn:"Go to \"Straffe\" in the menu — approved penalties for the race show up there."},
   ];
 }
 function HelpFaqScreen({state}){
@@ -2391,7 +2372,19 @@ function HelpFaqScreen({state}){
   const lang=useLang();
   const [search,setSearch]=useState("");
   const [openKey,setOpenKey]=useState(null);
-  const groups=faqData(lang);
+  // Groups the flat, admin-editable state.faqItems list by category, in whichever language is
+  // currently active — falls back to the Danish text if an item hasn't had its English version
+  // filled in yet (or vice versa), so a half-translated entry still shows something instead of
+  // a blank card.
+  const items=(state.faqItems||[]).map(it=>({
+    id:it.id,
+    category:(lang==="en"?it.categoryEn:it.category)||it.category||it.categoryEn||"",
+    q:(lang==="en"?it.questionEn:it.questionDa)||it.questionDa||it.questionEn||"",
+    a:(lang==="en"?it.answerEn:it.answerDa)||it.answerDa||it.answerEn||"",
+  }));
+  const categoryOrder=[];
+  items.forEach(it=>{if(it.category&&!categoryOrder.includes(it.category))categoryOrder.push(it.category);});
+  const groups=categoryOrder.map(category=>({category,items:items.filter(it=>it.category===category)}));
   const q=search.trim().toLowerCase();
   const filtered=groups.map(g=>({...g,items:g.items.filter(it=>!q||it.q.toLowerCase().includes(q)||it.a.toLowerCase().includes(q))})).filter(g=>g.items.length);
   return <div style={{padding:16,paddingBottom:"calc(16px + max(64px, env(safe-area-inset-bottom)))",overflowY:"auto",height:"100%",boxSizing:"border-box"}}>
@@ -2403,7 +2396,7 @@ function HelpFaqScreen({state}){
       <div key={g.category} style={{marginBottom:14}}>
         <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:6}}>{g.category.toUpperCase()}</div>
         {g.items.map(it=>{
-          const key=g.category+"|"+it.q;
+          const key=it.id;
           const open=openKey===key;
           return <Card key={key} onClick={()=>setOpenKey(open?null:key)} style={{cursor:"pointer",marginBottom:6,padding:"11px 14px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
@@ -2415,6 +2408,94 @@ function HelpFaqScreen({state}){
         })}
       </div>
     )}
+  </div>;
+}
+
+// Self-service editor for the FAQ shown under Hjælp — Admin → Opsætning → Rediger FAQ. Each entry
+// has both a Danish and an English version; leaving one blank just means that language falls back
+// to showing the other (see HelpFaqScreen), so a half-translated entry never looks broken to users.
+function AdminFaqManager({state,dispatch}){
+  const [editId,setEditId]=useState(null);
+  const [adding,setAdding]=useState(false);
+  const blank={category:"",categoryEn:"",questionDa:"",answerDa:"",questionEn:"",answerEn:""};
+  const [form,setForm]=useState(blank);
+  const items=state.faqItems||[];
+  const categoryOrder=[];
+  items.forEach(it=>{if(it.category&&!categoryOrder.includes(it.category))categoryOrder.push(it.category);});
+
+  const startAdd=()=>{setForm(blank);setAdding(true);setEditId(null);};
+  const startEdit=(it)=>{setForm({category:it.category||"",categoryEn:it.categoryEn||"",questionDa:it.questionDa||"",answerDa:it.answerDa||"",questionEn:it.questionEn||"",answerEn:it.answerEn||""});setEditId(it.id);setAdding(false);};
+  const cancel=()=>{setAdding(false);setEditId(null);};
+  const save=()=>{
+    if(!form.questionDa.trim()&&!form.questionEn.trim())return;
+    if(adding)dispatch({type:"ADD_FAQ_ITEM",payload:form});
+    else dispatch({type:"UPDATE_FAQ_ITEM",id:editId,payload:form});
+    cancel();
+  };
+  const remove=(id)=>{if(window.confirm("Slet dette FAQ-spørgsmål?"))dispatch({type:"DELETE_FAQ_ITEM",id});};
+  const move=(id,dir)=>{
+    const arr=items.slice();
+    const idx=arr.findIndex(x=>x.id===id);
+    const j=idx+dir;
+    if(idx<0||j<0||j>=arr.length)return;
+    [arr[idx],arr[j]]=[arr[j],arr[idx]];
+    dispatch({type:"REORDER_FAQ_ITEMS",items:arr});
+  };
+
+  const editForm=<Card style={{borderLeft:`3px solid ${C.blue}`,marginBottom:12}}>
+    <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:10}}>{adding?"NYT SPØRGSMÅL":"REDIGÉR SPØRGSMÅL"}</div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+      <Input label="Kategori (dansk)" value={form.category} onChange={v=>setForm(f=>({...f,category:v}))} placeholder="fx Tilmelding"/>
+      <Input label="Category (English)" value={form.categoryEn} onChange={v=>setForm(f=>({...f,categoryEn:v}))} placeholder="e.g. Registration"/>
+    </div>
+    <Input label="Spørgsmål (dansk)" value={form.questionDa} onChange={v=>setForm(f=>({...f,questionDa:v}))} placeholder="Hvordan..."/>
+    <div style={{marginBottom:10}}>
+      <div style={{color:C.textMuted,fontSize:10,letterSpacing:1,marginBottom:4}}>SVAR (DANSK)</div>
+      <textarea value={form.answerDa} onChange={e=>setForm(f=>({...f,answerDa:e.target.value}))} rows={3} style={{width:"100%",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",color:C.text,fontSize:12,boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/>
+    </div>
+    <Input label="Question (English)" value={form.questionEn} onChange={v=>setForm(f=>({...f,questionEn:v}))} placeholder="How..."/>
+    <div style={{marginBottom:10}}>
+      <div style={{color:C.textMuted,fontSize:10,letterSpacing:1,marginBottom:4}}>ANSWER (ENGLISH)</div>
+      <textarea value={form.answerEn} onChange={e=>setForm(f=>({...f,answerEn:e.target.value}))} rows={3} style={{width:"100%",background:C.surface2,border:`1px solid ${C.border}`,borderRadius:6,padding:"8px 12px",color:C.text,fontSize:12,boxSizing:"border-box",resize:"vertical",fontFamily:"inherit"}}/>
+    </div>
+    <div style={{color:C.textDim,fontSize:11,marginBottom:10}}>Kun udfyldt på ét sprog? Det er fint — den anden sprogversion viser bare den samme tekst indtil du oversætter den.</div>
+    <div style={{display:"flex",gap:8}}>
+      <Btn small onClick={save} disabled={!form.questionDa.trim()&&!form.questionEn.trim()}>Gem</Btn>
+      <Btn small variant="ghost" onClick={cancel}>Annuller</Btn>
+    </div>
+  </Card>;
+
+  return <div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <div style={{color:C.textMuted,fontSize:11}}>{items.length} spørgsmål</div>
+      {!adding&&!editId&&<Btn small onClick={startAdd}>+ Tilføj spørgsmål</Btn>}
+    </div>
+    {adding&&editForm}
+    {categoryOrder.map(category=>
+      <div key={category} style={{marginBottom:16}}>
+        <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:6}}>{category.toUpperCase()}</div>
+        {items.filter(it=>it.category===category).map((it,idxInCat,arr)=>
+          editId===it.id?<div key={it.id}>{editForm}</div>:
+          <Card key={it.id} style={{padding:"10px 14px",marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:13}}>{it.questionDa||it.questionEn}</div>
+                {it.questionEn&&it.questionEn!==it.questionDa&&<div style={{color:C.textDim,fontSize:11,marginTop:2}}>EN: {it.questionEn}</div>}
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                <button onClick={()=>move(it.id,-1)} style={{background:"transparent",border:"none",color:C.textMuted,cursor:"pointer",fontSize:10,lineHeight:1,padding:0}}>▲</button>
+                <button onClick={()=>move(it.id,1)} style={{background:"transparent",border:"none",color:C.textMuted,cursor:"pointer",fontSize:10,lineHeight:1,padding:0}}>▼</button>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:8}}>
+              <Btn small variant="ghost" onClick={()=>startEdit(it)}>Redigér</Btn>
+              <Btn small variant="danger" onClick={()=>remove(it.id)}>Slet</Btn>
+            </div>
+          </Card>
+        )}
+      </div>
+    )}
+    {items.length===0&&!adding&&<div style={{color:C.textDim,fontSize:12,textAlign:"center",padding:20}}>Ingen spørgsmål endnu — tilføj det første ovenfor.</div>}
   </div>;
 }
 
@@ -6256,7 +6337,7 @@ function AppearanceSettings({state,dispatch}){
 function AdminSetup({state,dispatch}){
   const t=useT();
   const [tab,setTab]=useState("sessions");
-  const tabs=[["racetypes","🏁 Løbstyper"],["clubs","🏢 Klubber"],["tracks","🏟 Baner"],["regulations","📋 Reglementer"],["penalties","⚠️ Straffe"],["storage","💾 Lager"],["appearance","🎨 Udseende"],["mine","🎛️ Mine indstillinger"],["help","❓ Hjælp"]];
+  const tabs=[["racetypes","🏁 Løbstyper"],["clubs","🏢 Klubber"],["tracks","🏟 Baner"],["regulations","📋 Reglementer"],["penalties","⚠️ Straffe"],["storage","💾 Lager"],["appearance","🎨 Udseende"],["mine","🎛️ Mine indstillinger"],["help","❓ Hjælp"],["editfaq","✏️ Rediger FAQ"]];
   return <div>
     <SH title="Opsætning"/>
     <div style={{display:"flex",gap:6,marginBottom:16,borderBottom:`1px solid ${C.border}`,paddingBottom:0}}>
@@ -6275,6 +6356,7 @@ function AdminSetup({state,dispatch}){
       <NotifPrefsSettings state={state} dispatch={dispatch}/>
     </div>}
     {tab==="help"&&<HelpFaqScreen state={state}/>}
+    {tab==="editfaq"&&<AdminFaqManager state={state} dispatch={dispatch}/>}
   </div>;
 }
 
