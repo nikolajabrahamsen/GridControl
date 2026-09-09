@@ -9421,10 +9421,18 @@ function App(){
     const isAuthId=(id)=>typeof id==="string"&&!String(id).startsWith("imp-")&&!String(id).startsWith("child-");
     if(action.type==="UPDATE_USER"&&isAuthId(action.payload?.id)){
       (async()=>{
-        const {data:existing}=await sb.from("profiles").select("*").eq("id",action.payload.id).maybeSingle();
+        // Used to re-fetch the current row from Supabase here and merge onto that — but that's an
+        // async read racing against any earlier write that hasn't landed yet. If two updates happen
+        // close together (e.g. tapping two notification-preference toggles quickly), the second
+        // one could fetch the row *before* the first one's write finished, merge onto that stale
+        // snapshot, and silently overwrite the first change — exactly the "my selection reverts"
+        // bug this caused. Computing the next state directly via the reducer (same pattern used
+        // elsewhere in this file, e.g. kart registers) is both correct and fast — no read
+        // round-trip, and no risk of stateRef.current not having caught up to this exact action yet.
+        const nextState=reducer(stateRef.current,action);
+        const existing=(nextState.authProfiles||[]).find(u=>u.id===action.payload.id);
         if(existing){
-          const merged=rowToUser(existing);
-          const row=userToRow({...merged,...action.payload});
+          const row=userToRow(existing);
           const {error}=await sb.from("profiles").update(row).eq("id",action.payload.id);
           if(error){
             console.error("Supabase profiles update:",error);
