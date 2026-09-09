@@ -1335,18 +1335,21 @@ function reducer(state,action){
     case "_RT_TECH_PDF_DELETE":return{...state,events:state.events.map(ev=>ev.id===action.eventId?{...ev,techPdfs:(ev.techPdfs||[]).filter(p=>p.id!==action.pdfId)}:ev)};
     // Realtime landing for one profile row changing (see profiles_sync channel below) — merges just
     // that one user's data directly from the postgres_changes payload, which is the fully committed
-    // row as of the write and needs no extra fetch. Replaces the old approach of re-fetching every
-    // single profile on any change (including this exact client's own write), which could race
-    // against that same write still finishing and overwrite it with a slightly stale snapshot —
-    // the actual cause of "my selection reverts" type bugs.
+    // row as of the write and needs no extra fetch. Deliberately does NOT touch state.currentUser,
+    // even when the changed row is your own — a realtime echo of your own profile can arrive with
+    // some delay (reconnects, buffering, event ordering isn't perfectly guaranteed), and blindly
+    // trusting it as more authoritative than your own just-made local change is exactly what caused
+    // selections to silently revert. Your own account only ever gets updated by your own dispatches
+    // (instant, definitely current) or by loading fresh at startup — realtime here is purely for
+    // seeing *other* people's profile changes live (e.g. an admin editing someone else's info).
     case "_RT_PROFILE_UPSERT":{
       const updated=action.user;
+      if(state.currentUser?.id===updated.id)return state;
       const profiles=(state.authProfiles||[]).some(u=>u.id===updated.id)
         ?state.authProfiles.map(u=>u.id===updated.id?updated:u)
         :[...(state.authProfiles||[]),updated];
       const users=mergeUsers(profiles,state.importedUsers);
-      const currentUser=state.currentUser?.id===updated.id?updated:state.currentUser;
-      return{...state,authProfiles:profiles,users,currentUser};
+      return{...state,authProfiles:profiles,users};
     }
     case "_RT_PROFILE_DELETE":{
       const profiles=(state.authProfiles||[]).filter(u=>u.id!==action.userId);
