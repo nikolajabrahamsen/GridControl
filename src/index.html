@@ -2653,10 +2653,13 @@ function CalendarScreen({state,dispatch}){
     const registerId=resolveRegisterId(state,sel);
     const reg=getKartRegister(state,registerId);
     const regNum=myKartInClass(reg,cls,regUser?.id);
-    const profNum=regUser?.kartNumber;
     if(!kartRange(reg,cls))return{ok:true,msg:""};
+    // The register is the actual source of truth for a driver's number (see allKartNumbersForUser)
+    // — the registration itself doesn't even store a kart number at all, it's resolved live from
+    // the register wherever it's shown. Used to also require the flat profile field to match the
+    // register before allowing registration, which just blocked people over a stale/differing
+    // profile field that was never actually used for anything — removed.
     if(!regNum)return{ok:false,msg:`${regUser?.name} har ikke valgt et kartnummer i ${cls}. Vælg nummer under "Kartnummer" før tilmelding.`};
-    if(profNum&&parseInt(profNum)!==regNum)return{ok:false,msg:`Kartnummeret på profilen (#${profNum}) stemmer ikke med registeret (#${regNum}) i ${cls}. Ret det før tilmelding.`};
     return{ok:true,msg:""};
   };
 
@@ -2685,7 +2688,15 @@ function CalendarScreen({state,dispatch}){
         </Card>}
         <Card>
           <div style={{color:C.textMuted,fontSize:10,letterSpacing:2,marginBottom:8}}>OPLYSNINGER</div>
-          {[["Navn",regUser?.name],["Licens",regUser?.license],["Transponder",regUser?.transponder],["Kart #",regUser?.kartNumber]].map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}><span style={{color:C.textMuted,fontSize:12}}>{k}</span><span style={{color:C.text,fontWeight:600,fontSize:12}}>{v}</span></div>)}
+          {[["Navn",regUser?.name],["Licens",regUser?.license],["Transponder",regUser?.transponder],["Kart #",(()=>{
+            // Shows the number actually claimed in the register for the class being registered for
+            // (same source of truth as everywhere else now), rather than the flat profile field,
+            // which isn't what registration actually checks or uses.
+            const dispCls=selClass||evClasses[0];
+            if(!dispCls)return regUser?.kartNumber;
+            const dispReg=getKartRegister(state,resolveRegisterId(state,sel));
+            return myKartInClass(dispReg,dispCls,regUser?.id)??regUser?.kartNumber;
+          })()]].map(([k,v])=><div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}`}}><span style={{color:C.textMuted,fontSize:12}}>{k}</span><span style={{color:C.text,fontWeight:600,fontSize:12}}>{v}</span></div>)}
           <div style={{marginTop:8,padding:8,background:regUser?.licenseValid?`${C.green}11`:`${C.orange}11`,borderRadius:6,display:"flex",gap:8,alignItems:"center"}}>
             <span>{regUser?.licenseValid?"✅":"⚠️"}</span>
             <span style={{color:regUser?.licenseValid?C.green:C.orange,fontSize:12,fontWeight:700}}>{regUser?.licenseValid?"Licens godkendt":"Licens ikke verificeret"}</span>
